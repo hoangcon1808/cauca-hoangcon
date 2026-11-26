@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Câu Cá Triệu Tâm 3D - WebGL Edition</title>
+  <title>Câu Cá Hoàng Con 3D - Ultimate Edition</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -14,8 +14,8 @@
         <div class="auth-brand">
           <div class="logo">🎣</div>
           <h1>Câu Cá Triệu Tâm 3D</h1>
-          <p>Đồ Họa 3D • 7 Bản Đồ • Săn Boss • Gacha Thần Khí</p>
-          <span class="mode-badge" id="storageModeBadge">☁️ Supabase Cloud + Offline Admin</span>
+          <p>3D Xoay 360° • 5 Thuyền • 7 Bản Đồ • Boss • Gacha • Chat</p>
+          <span class="mode-badge">☁️ Supabase Cloud + Admin Offline</span>
         </div>
 
         <div class="auth-tabs">
@@ -50,7 +50,7 @@
 
         <button class="guest-btn" type="button" onclick="enterGuestMode()">👤 Chơi Ngay (Chế Độ Khách)</button>
         <div class="auth-hint">
-          Chế độ Khách lưu trực tiếp trên máy và có thể <b>liên kết tài khoản Cloud</b> sau này mà không mất dữ liệu.
+          Chế độ Khách lưu trên thiết bị và có thể <b>liên kết tài khoản Cloud</b> sau này mà không mất dữ liệu.
         </div>
       </div>
     </div>
@@ -74,25 +74,39 @@
         <div class="pill gem" title="Kim Cương">💎 <span id="uiGems">0</span></div>
         <div class="pill key" title="Chìa Khóa Rương">🔑 <span id="uiKeys">0</span></div>
         <button class="icon-btn admin-btn" id="btnAdminPanel" style="display:none;" onclick="openDrawer('admin')" title="Bảng Điều Khiển Admin">🛠️</button>
+        <button class="icon-btn chat-btn" onclick="openDrawer('chat')" title="Chat Thế Giới Online">💬</button>
         <button class="icon-btn rank-btn" onclick="openDrawer('leaderboard')" title="Bảng Xếp Hạng Online">👑</button>
         <button class="icon-btn" id="btnSound" title="Bật/Tắt âm thanh">🔊</button>
         <button class="icon-btn" id="btnSettings" title="Cài đặt & Sao lưu">⚙️</button>
       </div>
     </header>
 
+    <!-- GLOBAL ANNOUNCEMENT TICKER -->
+    <div class="world-ticker" id="worldTicker">
+      <span class="ticker-tag">📢 THẾ GIỚI</span>
+      <div class="ticker-text" id="tickerText">Chào mừng tới Câu Cá Triệu Tâm 3D! Kéo trên mặt biển để xoay góc nhìn 360°!</div>
+    </div>
+
     <!-- 3D GAME STAGE -->
     <main class="stage-wrap">
       <div id="scene3dContainer"></div>
       <div id="fxLayer"></div>
 
+      <!-- TOP OVERLAY STRIPS -->
       <div class="gear-strip">
-        <div class="gear-chip" id="uiGearInfo">🎋 Cần Tre • 🪱 Giun (∞)</div>
+        <div class="chip-left">
+          <div class="gear-chip" id="uiGearInfo">🎋 Cần Tre • 🪱 Giun (∞)</div>
+          <div class="gear-chip combo-chip" id="uiComboChip" style="display:none;">🔥 Combo x0</div>
+        </div>
         <div class="chip-right">
-          <div class="gear-chip cam-chip" id="btnCamToggle" title="Đổi góc nhìn Camera 3D">🎥 3D</div>
-          <div class="gear-chip radar-chip" id="btnBossRadar" title="Xem Sự kiện Săn Boss">📡 Boss: --s</div>
+          <div class="gear-chip cam-chip" id="btnCamToggle" title="Chuyển góc nhìn 3D nhanh">🎥 3D</div>
+          <div class="gear-chip radar-chip" id="btnBossRadar" title="Xem Sự kiện Săn Boss">📡 --s</div>
           <div class="gear-chip auto-toggle" id="btnAutoFish">🤖 Auto: TẮT</div>
         </div>
       </div>
+
+      <!-- ACTIVE BUFF & FEVER BAR -->
+      <div class="buff-strip" id="buffStrip"></div>
 
       <!-- BOSS EVENT BANNER -->
       <div class="boss-banner" id="bossBanner">
@@ -145,6 +159,7 @@
       <button class="nav-btn" onclick="openDrawer('bag')">
         <span class="ico">🎒</span>
         <span id="navBagText">Túi (0)</span>
+        <span class="badge-dot aqua-dot" id="tankDot">🪙</span>
       </button>
       <button class="nav-btn" onclick="openDrawer('shop')">
         <span class="ico">🛒</span>
@@ -183,7 +198,7 @@
     </div>
   </div>
 
-  <!-- Three.js WebGL Engine + Modular Scripts -->
+  <!-- Three.js WebGL + Game Modules -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script src="js/data.js"></script>
   <script src="js/scene3d.js"></script>
