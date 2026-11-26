@@ -3,7 +3,7 @@ const SUPABASE_URL = 'https://exftrdnscvpipfioiwkg.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_xfTc4V6N3avkR8STSl6IrQ_nnxZ3_k7';
 const CLOUD_ENABLED = !!(SUPABASE_URL && SUPABASE_KEY);
 
-// Tài khoản Admin có sẵn (Offline hoàn toàn, không cần Supabase)
+// Tài khoản Admin có sẵn (Hoạt động Offline, không cần Supabase)
 const BUILTIN_ADMIN = {
   username: 'admin',
   password: 'admin123',
@@ -11,15 +11,31 @@ const BUILTIN_ADMIN = {
 };
 
 const RARITIES = {
-  common:    { name: 'Thường',     color: '#cbd5e1', xp: 12,  speed: 24, erratic: 1.75, drain: 14, weight: 52 },
-  uncommon:  { name: 'Hiếm',       color: '#4ade80', xp: 24,  speed: 34, erratic: 1.40, drain: 17, weight: 25 },
-  rare:      { name: 'Quý',        color: '#38bdf8', xp: 48,  speed: 46, erratic: 1.10, drain: 21, weight: 13 },
-  epic:      { name: 'Sử Thi',     color: '#c084fc', xp: 95,  speed: 58, erratic: 0.88, drain: 25, weight: 6.5 },
-  legendary: { name: 'Huyền Thoại',color: '#fbbf24', xp: 200, speed: 72, erratic: 0.68, drain: 29, weight: 2.8 },
-  mythical:  { name: 'Thần Thoại', color: '#fb7185', xp: 450, speed: 88, erratic: 0.52, drain: 33, weight: 0.7 }
+  common:    { name: 'Thường',     color: '#cbd5e1', hex: 0xcbd5e1, rank: 1, xp: 12,  speed: 24, erratic: 1.75, drain: 14, weight: 52 },
+  uncommon:  { name: 'Hiếm',       color: '#4ade80', hex: 0x4ade80, rank: 2, xp: 24,  speed: 34, erratic: 1.40, drain: 17, weight: 25 },
+  rare:      { name: 'Quý',        color: '#38bdf8', hex: 0x38bdf8, rank: 3, xp: 48,  speed: 46, erratic: 1.10, drain: 21, weight: 13 },
+  epic:      { name: 'Sử Thi',     color: '#c084fc', hex: 0xc084fc, rank: 4, xp: 95,  speed: 58, erratic: 0.88, drain: 25, weight: 6.5 },
+  legendary: { name: 'Huyền Thoại',color: '#fbbf24', hex: 0xfbbf24, rank: 5, xp: 200, speed: 72, erratic: 0.68, drain: 29, weight: 2.8 },
+  mythical:  { name: 'Thần Thoại', color: '#fb7185', hex: 0xfb7185, rank: 6, xp: 450, speed: 88, erratic: 0.52, drain: 33, weight: 0.7 }
 };
 
-// 7 BẢN ĐỒ 3D VỚI BIOME & HIỆU ỨNG RIÊNG
+// 5 MẪU THUYỀN 3D (THAY ĐỔI MÔ HÌNH THẬT TRÊN MẶT BIỂN)
+const BOATS = [
+  { id: 'wood',      name: 'Thuyền Gỗ Làng',      icon: '🛶', cost: 0,     bagBonus: 0,  luckBonus: 0,  bossBonus: 0,    desc: 'Thuyền mộc khởi đầu, bền bỉ trên sóng nhẹ.' },
+  { id: 'speedboat', name: 'Cano Cao Tốc',        icon: '🚤', cost: 2800,  bagBonus: 5,  luckBonus: 12, bossBonus: 0.15, desc: '+5 sức chứa túi, +12% May mắn, +15% Sát thương Boss.' },
+  { id: 'pirate',    name: 'Chiến Thuyền Hải Tặc',icon: '🏴‍☠️', cost: 14000, bagBonus: 12, luckBonus: 28, bossBonus: 0.35, desc: 'Cột buồm đại bác 3D! +12 túi, +28% May mắn, +35% Boss.' },
+  { id: 'yacht',     name: 'Du Thuyền Hoàng Gia', icon: '🛥️', cost: 48000, bagBonus: 20, luckBonus: 55, bossBonus: 0.55, desc: 'Du thuyền 2 tầng mạ vàng! +20 túi, +55% May mắn, +55% Boss.' },
+  { id: 'cyber',     name: 'Phi Thuyền Neon 3D',  icon: '🛸', cost: 140000,bagBonus: 35, luckBonus: 95, bossBonus: 0.90, desc: 'Thuyền tương lai phát quang! +35 túi, +95% May mắn, +90% Boss.' }
+];
+
+// 3 LOẠI THUỐC BUFF CHỦ ĐỘNG (HIỆU LỰC 3 PHÚT)
+const BUFFS = [
+  { id: 'luck', name: 'Thuốc May Mắn (+100%)', icon: '🍀', costGold: 900,  costGems: 8,  durationSec: 180, desc: '+100% May mắn câu cá hiếm trong 3 phút.' },
+  { id: 'gold', name: 'Thuốc Phú Hộ (x2 Vàng)',icon: '💰', costGold: 1100, costGems: 10, durationSec: 180, desc: 'Nhân đôi (x2) giá trị cá câu được trong 3 phút.' },
+  { id: 'boss', name: 'Thuốc Diệt Boss (x2 DPS)',icon: '⚔️', costGold: 1300, costGems: 10, durationSec: 180, desc: 'Nhân đôi (x2) sát thương lên Boss 3D trong 3 phút.' }
+];
+
+// 7 BẢN ĐỒ 3D
 const MAPS = [
   {
     id: 'pond', name: 'Hồ Làng Quê', icon: '🏞️', reqLv: 1, cost: 0, biome: 'pond',
@@ -31,7 +47,7 @@ const MAPS = [
     id: 'river', name: 'Sông Mê Kông', icon: '🌾', reqLv: 3, cost: 450, biome: 'river',
     skyHex: 0xc25951, fogHex: 0xe88d67, waterHex: 0x1b6b68, deepHex: 0x0a383a, sunHex: 0xff9e5e,
     swatch: 'linear-gradient(135deg,#fb923c,#9a3412)',
-    desc: 'Hoàng hôn đỏ rực, rặng dừa ven sông phù sa đầy cá lớn.'
+    desc: 'Hoàng hôn đỏ rực, rặng cây ven sông phù sa đầy cá lớn.'
   },
   {
     id: 'bay', name: 'Vịnh San Hô', icon: '🏝️', reqLv: 6, cost: 2200, biome: 'bay',
@@ -43,13 +59,13 @@ const MAPS = [
     id: 'ocean', name: 'Biển Đông Sâu', icon: '🌊', reqLv: 10, cost: 8500, biome: 'ocean',
     skyHex: 0x0b1536, fogHex: 0x172554, waterHex: 0x0c3469, deepHex: 0x04122b, sunHex: 0xe2e8f0,
     swatch: 'linear-gradient(135deg,#1e3a8a,#020617)',
-    desc: 'Biển đêm đầy sao, ngọn hải đăng xoay & sóng lớn.'
+    desc: 'Biển đêm đầy sao, ngọn hải đăng & sóng đại dương.'
   },
   {
     id: 'arctic', name: 'Biển Băng Bắc Cực', icon: '❄️', reqLv: 14, cost: 18000, biome: 'arctic',
     skyHex: 0x0c2440, fogHex: 0x1e4068, waterHex: 0x155e75, deepHex: 0x082f49, sunHex: 0x67e8f9,
     swatch: 'linear-gradient(135deg,#67e8f9,#1e3a8a)',
-    desc: 'Tảng băng trôi 3D, cực quang xanh ngọc & tuyết rơi trắng xóa.'
+    desc: 'Tảng băng trôi 3D, cực quang xanh ngọc & tuyết rơi.'
   },
   {
     id: 'volcano', name: 'Đảo Núi Lửa Dung Nham', icon: '🌋', reqLv: 18, cost: 42000, biome: 'volcano',
@@ -65,59 +81,46 @@ const MAPS = [
   }
 ];
 
-// 35 LOÀI CÁ TRẢI ĐỀU 7 BẢN ĐỒ
+// 35 LOÀI CÁ
 const FISH_DB = [
-  // Hồ Làng Quê
   { id: 'f1',  name: 'Cá Rô Phi',             emoji: '🐟', rarity: 'common',    maps: ['pond','river'], minW: 0.3, maxW: 1.5, basePrice: 18 },
   { id: 'f2',  name: 'Cá Diếc Bạc',           emoji: '🐠', rarity: 'common',    maps: ['pond'],         minW: 0.2, maxW: 1.0, basePrice: 15 },
   { id: 'f3',  name: 'Cá Chép Vàng',          emoji: '🎏', rarity: 'uncommon',  maps: ['pond','river'], minW: 1.0, maxW: 4.5, basePrice: 42 },
   { id: 'f4',  name: 'Cá Trê Đồng',           emoji: '🐡', rarity: 'uncommon',  maps: ['pond','river'], minW: 0.8, maxW: 3.8, basePrice: 46 },
   { id: 'f5',  name: 'Cá Lóc Bông',           emoji: '🐊', rarity: 'rare',      maps: ['pond','river'], minW: 2.0, maxW: 8.0, basePrice: 110 },
   { id: 'f6',  name: 'Cá Koi Tam Sắc',        emoji: '🏮', rarity: 'epic',      maps: ['pond'],         minW: 3.0, maxW: 9.0, basePrice: 260 },
-
-  // Sông Mê Kông
   { id: 'f7',  name: 'Cá Linh Non',           emoji: '🐟', rarity: 'common',    maps: ['river'],        minW: 0.2, maxW: 0.8, basePrice: 28 },
   { id: 'f8',  name: 'Tôm Càng Xanh',         emoji: '🦐', rarity: 'uncommon',  maps: ['river','bay'],  minW: 0.3, maxW: 1.2, basePrice: 75 },
   { id: 'f9',  name: 'Cá Hô Khổng Lồ',        emoji: '🐋', rarity: 'rare',      maps: ['river'],        minW: 12,  maxW: 45,  basePrice: 185 },
   { id: 'f10', name: 'Cá Tra Dầu',            emoji: '🦈', rarity: 'epic',      maps: ['river'],        minW: 25,  maxW: 90,  basePrice: 420 },
   { id: 'f11', name: 'Cá Rồng Huyết Long',    emoji: '🐉', rarity: 'legendary', maps: ['river','pond'], minW: 4.0, maxW: 14,  basePrice: 980 },
-
-  // Vịnh San Hô
   { id: 'f12', name: 'Cá Hề Nemo',            emoji: '🐠', rarity: 'common',    maps: ['bay'],          minW: 0.2, maxW: 0.6, basePrice: 55 },
   { id: 'f13', name: 'Cua Hoàng Đế',          emoji: '🦀', rarity: 'uncommon',  maps: ['bay','ocean'],  minW: 1.5, maxW: 6.0, basePrice: 135 },
   { id: 'f14', name: 'Mực Ống Ánh Kim',       emoji: '🦑', rarity: 'rare',      maps: ['bay','ocean'],  minW: 1.0, maxW: 5.5, basePrice: 270 },
   { id: 'f15', name: 'Tôm Hùm Alaska',        emoji: '🦞', rarity: 'epic',      maps: ['bay','arctic'], minW: 2.0, maxW: 8.5, basePrice: 590 },
   { id: 'f16', name: 'Rùa Biển Ngọc',         emoji: '🐢', rarity: 'legendary', maps: ['bay'],          minW: 18,  maxW: 65,  basePrice: 1450 },
-
-  // Biển Đông Sâu
   { id: 'f17', name: 'Cá Thu Đại Dương',      emoji: '🐟', rarity: 'common',    maps: ['ocean'],        minW: 3.0, maxW: 12,  basePrice: 115 },
   { id: 'f18', name: 'Cá Ngừ Vây Xanh',       emoji: '🐬', rarity: 'uncommon',  maps: ['ocean'],        minW: 15,  maxW: 80,  basePrice: 280 },
   { id: 'f19', name: 'Cá Kiếm Bạc',           emoji: '🗡️', rarity: 'rare',      maps: ['ocean'],        minW: 20,  maxW: 110, basePrice: 540 },
   { id: 'f20', name: 'Cá Mập Trắng',          emoji: '🦈', rarity: 'epic',      maps: ['ocean','trench'],minW: 80, maxW: 320, basePrice: 1150 },
   { id: 'f21', name: 'Cá Voi Xanh',           emoji: '🐳', rarity: 'legendary', maps: ['ocean','arctic'],minW: 250,maxW: 900, basePrice: 2800 },
-
-  // Biển Băng Bắc Cực
   { id: 'f26', name: 'Cá Tuyết Bắc Cực',      emoji: '🐟', rarity: 'common',    maps: ['arctic'],       minW: 2.0, maxW: 9.0, basePrice: 195 },
   { id: 'f27', name: 'Cá Hồi Băng Giá',       emoji: '🐠', rarity: 'uncommon',  maps: ['arctic'],       minW: 3.0, maxW: 14,  basePrice: 420 },
   { id: 'f28', name: 'Kỳ Lân Biển Narwhal',   emoji: '🦄', rarity: 'rare',      maps: ['arctic'],       minW: 60,  maxW: 240, basePrice: 920 },
   { id: 'f29', name: 'Cá Voi Sát Thủ Orca',   emoji: '🐋', rarity: 'epic',      maps: ['arctic'],       minW: 180, maxW: 620, basePrice: 1950 },
   { id: 'f30', name: 'Băng Long Cực Quang',   emoji: '❄️', rarity: 'legendary', maps: ['arctic'],       minW: 140, maxW: 480, basePrice: 4200 },
-
-  // Đảo Núi Lửa Dung Nham
   { id: 'f31', name: 'Cá Tro Hỏa Diệm',       emoji: '🐟', rarity: 'common',    maps: ['volcano'],      minW: 2.5, maxW: 10,  basePrice: 310 },
   { id: 'f32', name: 'Cua Nham Thạch',        emoji: '🦀', rarity: 'uncommon',  maps: ['volcano'],      minW: 4.0, maxW: 16,  basePrice: 680 },
   { id: 'f33', name: 'Lươn Lửa Địa Ngục',     emoji: '🐍', rarity: 'rare',      maps: ['volcano'],      minW: 12,  maxW: 48,  basePrice: 1450 },
   { id: 'f34', name: 'Cá Mập Magma',          emoji: '🦈', rarity: 'epic',      maps: ['volcano'],      minW: 95,  maxW: 380, basePrice: 3100 },
   { id: 'f35', name: 'Phượng Hoàng Dung Nham',emoji: '🔥', rarity: 'mythical',  maps: ['volcano'],      minW: 160, maxW: 777, basePrice: 12500 },
-
-  // Rãnh Mariana Huyền Bí
   { id: 'f22', name: 'Cá Đèn Lồng Vực Thẳm',  emoji: '🏮', rarity: 'uncommon',  maps: ['trench'],       minW: 1.5, maxW: 6.5, basePrice: 720 },
   { id: 'f23', name: 'Bạch Tuộc Ma Neon',     emoji: '🐙', rarity: 'rare',      maps: ['trench'],       minW: 8.0, maxW: 35,  basePrice: 1650 },
   { id: 'f24', name: 'Thủy Quái Kraken',      emoji: '🦑', rarity: 'legendary', maps: ['trench'],       minW: 120, maxW: 500, basePrice: 5600 },
   { id: 'f25', name: 'Rồng Biển Đông Tối Thượng', emoji: '🐲', rarity: 'mythical', maps: ['trench','ocean'], minW: 200, maxW: 999, basePrice: 14800 }
 ];
 
-// 14 CẦN CÂU (7 SHOP + 7 GACHA ĐỘC QUYỀN)
+// 14 CẦN CÂU
 const RODS = [
   { id: 'bamboo',   name: 'Cần Tre Làng',            icon: '🎋', rarity: 'common',    gachaOnly: false, cost: 0,      luck: 0,   barWidth: 25, power: 1.0,  bossDmg: 1.0,  slow: 0,    goldBonus: 0,    color: '#d6d3d1', desc: 'Cần khởi đầu, nhẹ và dễ làm quen.' },
   { id: 'fiber',    name: 'Cần Thủy Tinh',           icon: '🎣', rarity: 'uncommon',  gachaOnly: false, cost: 320,    luck: 12,  barWidth: 28, power: 1.2,  bossDmg: 1.15, slow: 0,    goldBonus: 0,    color: '#4ade80', desc: '+12% May mắn, thanh kéo rộng hơn.' },
@@ -126,7 +129,6 @@ const RODS = [
   { id: 'lunar',    name: 'Cần Ánh Trăng',           icon: '🌙', rarity: 'legendary', gachaOnly: false, cost: 22000,  luck: 80,  barWidth: 40, power: 2.1,  bossDmg: 1.8,  slow: 0.10, goldBonus: 0.10, color: '#fbbf24', desc: '+80% May mắn, làm chậm cá 10%.' },
   { id: 'poseidon', name: 'Đinh Ba Poseidon',        icon: '🔱', rarity: 'mythical',  gachaOnly: false, cost: 68000,  luck: 130, barWidth: 44, power: 2.55, bossDmg: 2.2,  slow: 0.15, goldBonus: 0.15, color: '#fb7185', desc: 'Thần khí biển cả, chuyên săn Thần Thoại.' },
   { id: 'obsidian', name: 'Cần Hắc Diện Thạch',      icon: '🌋', rarity: 'mythical',  gachaOnly: false, cost: 165000, luck: 170, barWidth: 46, power: 2.85, bossDmg: 2.6,  slow: 0.20, goldBonus: 0.22, color: '#f97316', desc: 'Rèn từ lõi núi lửa, chuyên trị cá vùng Dung Nham.' },
-
   { id: 'g_coral',  name: 'Cần San Hô Đỏ',           icon: '🪸', rarity: 'rare',      gachaOnly: true,  cost: 0, luck: 40,  barWidth: 34, power: 1.55, bossDmg: 1.45, slow: 0.08, goldBonus: 0.08, color: '#38bdf8', desc: '[GACHA] +40% May mắn, +45% Sát thương Boss.' },
   { id: 'g_frost',  name: 'Cần Băng Bắc Cực',        icon: '❄️', rarity: 'epic',      gachaOnly: true,  cost: 0, luck: 75,  barWidth: 38, power: 1.85, bossDmg: 1.65, slow: 0.24, goldBonus: 0.10, color: '#67e8f9', desc: '[GACHA] Đóng băng làm chậm cá 24% cực dễ kéo!' },
   { id: 'g_zeus',   name: 'Cần Sấm Sét Zeus',        icon: '🌩️', rarity: 'epic',      gachaOnly: true,  cost: 0, luck: 90,  barWidth: 38, power: 2.0,  bossDmg: 2.25, slow: 0.12, goldBonus: 0.12, color: '#c084fc', desc: '[GACHA] Chuyên diệt Thủy Quái: +125% Sát thương Boss!' },
@@ -151,7 +153,6 @@ const UPGRADES = [
   { id: 'auto',  name: 'Máy Câu Tự Động', icon: '🤖', maxLv: 1,  baseCost: 1200, mult: 1.0,  desc: 'Mở khóa chế độ Auto-Fish rảnh tay!' }
 ];
 
-// 5 BOSS THỦY QUÁI 3D
 const BOSS_DB = [
   { id: 'b1', name: 'Cua Khổng Lồ Thiết Giáp', emoji: '🦀', colorHex: 0xef4444, rarity: 'epic',      hp: 340,  speed: 54, erratic: 0.95, drain: 19, rewardGold: 1200,  rewardGems: 12, rewardKeys: 1, xp: 180,  minLv: 1 },
   { id: 'b2', name: 'Mãng Xà Biển Đen',        emoji: '🐍', colorHex: 0x10b981, rarity: 'epic',      hp: 580,  speed: 64, erratic: 0.80, drain: 22, rewardGold: 2800,  rewardGems: 20, rewardKeys: 2, xp: 320,  minLv: 3 },
@@ -182,11 +183,10 @@ const QUESTS = [
   { id: 'q4', title: 'Khắc tinh Đại Dương', desc: 'Hạ gục 5 Boss Thủy Quái 3D',        target: 5,    check: s => s.stats.bossesKilled,  rewardGold: 5000, rewardGems: 45, rewardKeys: 5 },
   { id: 'q5', title: 'Thử vận may Gacha',   desc: 'Mở 5 Rương Cần Câu bất kỳ',         target: 5,    check: s => s.stats.gachaPulls,    rewardGold: 1200, rewardGems: 25, rewardKeys: 2 },
   { id: 'q6', title: 'Nhà thám hiểm 3D',    desc: 'Mở khóa 4 bản đồ 3D',               target: 4,    check: s => s.mapsUnlocked.length, rewardGold: 3200, rewardGems: 35, rewardKeys: 3 },
-  { id: 'q7', title: 'Nhà sưu tầm',         desc: 'Mở khóa 15 loài trong Bộ sưu tập',  target: 15,   check: s => Object.keys(s.dex).length, rewardGold: 2800, rewardGems: 35, rewardKeys: 3 },
+  { id: 'q7', title: 'Chủ Bể Cá Triệu Đô',  desc: 'Thả 3 con cá vào Bể Trưng Bày',     target: 3,    check: s => (s.aquarium || []).length, rewardGold: 2200, rewardGems: 25, rewardKeys: 2 },
   { id: 'q8', title: 'Huyền thoại biển cả', desc: 'Câu được 1 cá Huyền Thoại trở lên', target: 1,    check: s => s.stats.legendCaught,  rewardGold: 5500, rewardGems: 50, rewardKeys: 4 }
 ];
 
-// QUÀ ĐIỂM DANH 7 NGÀY
 const DAILY_REWARDS = [
   { day: 1, icon: '🪙', label: '500 Vàng',       gold: 500,  gems: 5,  keys: 0 },
   { day: 2, icon: '🦐', label: '15 Tôm Tươi',    gold: 300,  gems: 8,  keys: 1, bait: { id: 'shrimp', qty: 15 } },
@@ -197,7 +197,6 @@ const DAILY_REWARDS = [
   { day: 7, icon: '👑', label: 'Rương Siêu VIP', gold: 8000, gems: 90, keys: 6, bait: { id: 'mystic', qty: 10 } }
 ];
 
-// MÃ GIFTCODE QUÀ TẶNG
 const GIFTCODES = {
   TANTHU:   { label: 'Quà Tân Thủ',      gold: 1000, gems: 20, keys: 2 },
   TRIEUTAM: { label: 'Triệu Tâm 3D',     gold: 2500, gems: 35, keys: 3 },
