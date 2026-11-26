@@ -6,7 +6,13 @@ let session = null; // { mode: 'admin' | 'guest' | 'user', username, displayName
 let authTab = 'login';
 let cloudSyncTimer = null;
 let lbSort = 'total_earned';
-let adminGodMode = false; // Bật trong Admin Panel: 100% cá hiếm/Thần thoại + x10 DPS Boss
+let adminGodMode = false;
+let bagSortDesc = true;
+let dexMapFilter = 'all';
+
+// Combo & Fever Mode
+let catchStreak = 0;
+let feverTimeLeft = 0;
 
 function sbHeaders(extra = {}) {
   const h = { apikey: SUPABASE_KEY, ...extra };
@@ -16,20 +22,44 @@ function sbHeaders(extra = {}) {
 
 function defaultState() {
   return {
-    gold: 200, gems: 25, keys: 2, level: 1, xp: 0,
-    mapId: 'pond', mapsUnlocked: ['pond'],
-    rodId: 'bamboo', rodsOwned: ['bamboo'], rodStars: {},
-    baitId: 'worm', baitCounts: { worm: 999999, bran: 5 },
+    gold: 200,
+    gems: 25,
+    keys: 2,
+    level: 1,
+    xp: 0,
+    mapId: 'pond',
+    mapsUnlocked: ['pond'],
+    rodId: 'bamboo',
+    rodsOwned: ['bamboo'],
+    rodStars: {},
+    baitId: 'worm',
+    baitCounts: { worm: 999999, bran: 5 },
     upgrades: { bag: 0, speed: 0, price: 0, auto: 0 },
-    bag: [], dex: {}, bossLog: {}, claimedQuests: [], redeemedCodes: [],
-    dailyStreak: 0, lastDailyDate: '',
+    bag: [],
+    dex: {},
+    bossLog: {},
+    claimedQuests: [],
+    redeemedCodes: [],
+    dailyStreak: 0,
+    lastDailyDate: '',
     gachaPity: 0,
-    stats: { totalCaught: 0, totalEarned: 0, rareCaught: 0, legendCaught: 0, bossesKilled: 0, gachaPulls: 0 },
-    sound: true, autoFish: false
+    stats: {
+      totalCaught: 0,
+      totalEarned: 0,
+      rareCaught: 0,
+      legendCaught: 0,
+      bossesKilled: 0,
+      gachaPulls: 0,
+      bestStreak: 0
+    },
+    sound: true,
+    vibrate: true,
+    autoFish: false,
+    autoSellLow: false
   };
 }
 
-// Tạo dữ liệu Full Max cho Tài khoản Admin Offline (Không cần Supabase)
+// Dữ liệu Full Max cho Tài khoản Admin Offline (Không cần Supabase)
 function createAdminState() {
   const allRods = RODS.map(r => r.id);
   const allStars = {};
@@ -60,7 +90,15 @@ function createAdminState() {
     baitCounts: allBaits,
     upgrades: maxUpgrades,
     dex: fullDex,
-    stats: { totalCaught: 999, totalEarned: 999999999, rareCaught: 500, legendCaught: 100, bossesKilled: 50, gachaPulls: 100 }
+    stats: {
+      totalCaught: 999,
+      totalEarned: 999999999,
+      rareCaught: 500,
+      legendCaught: 100,
+      bossesKilled: 50,
+      gachaPulls: 100,
+      bestStreak: 99
+    }
   };
 }
 
@@ -70,13 +108,18 @@ function normalizeState(raw) {
   const def = defaultState();
   const p = raw || {};
   return {
-    ...def, ...p,
+    ...def,
+    ...p,
     upgrades: { ...def.upgrades, ...(p.upgrades || {}) },
     stats: { ...def.stats, ...(p.stats || {}) },
     baitCounts: { ...def.baitCounts, ...(p.baitCounts || {}) },
     rodStars: { ...(p.rodStars || {}) },
     bossLog: { ...(p.bossLog || {}) },
-    redeemedCodes: Array.isArray(p.redeemedCodes) ? p.redeemedCodes : []
+    bag: Array.isArray(p.bag) ? p.bag : [],
+    claimedQuests: Array.isArray(p.claimedQuests) ? p.claimedQuests : [],
+    redeemedCodes: Array.isArray(p.redeemedCodes) ? p.redeemedCodes : [],
+    mapsUnlocked: Array.isArray(p.mapsUnlocked) && p.mapsUnlocked.length ? p.mapsUnlocked : ['pond'],
+    rodsOwned: Array.isArray(p.rodsOwned) && p.rodsOwned.length ? p.rodsOwned : ['bamboo']
   };
 }
 
@@ -93,8 +136,26 @@ async function hashPassword(password, salt) {
     return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
   }
   let h = 2166136261;
-  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
   return 'fb_' + (h >>> 0).toString(16);
+}
+
+// Base64 UTF-8 an toàn cho mã sao lưu
+function encodeSaveB64(obj) {
+  const json = JSON.stringify(obj);
+  const bytes = new TextEncoder().encode(json);
+  let bin = '';
+  bytes.forEach(b => { bin += String.fromCharCode(b); });
+  return btoa(bin);
+}
+
+function decodeSaveB64(str) {
+  const bin = atob(str.trim());
+  const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
 }
 
 /* ======================== SUPABASE CLOUD HELPERS ======================== */
@@ -102,7 +163,7 @@ async function parseSupabaseError(res) {
   try {
     const j = await res.json();
     if (j?.code === '42P01' || j?.code === 'PGRST205') {
-      return 'Chưa tạo bảng fishing_accounts trên Supabase. Hãy chạy đoạn SQL hướng dẫn trước.';
+      return 'Chưa tạo bảng fishing_accounts trên Supabase. Hãy chạy đoạn SQL tạo bảng trước.';
     }
     return j?.message || `Lỗi máy chủ (${res.status})`;
   } catch {
@@ -160,9 +221,12 @@ async function cloudSaveState(immediate = false) {
       });
     } catch {}
   };
-  if (immediate) return run();
+  if (immediate) {
+    clearTimeout(cloudSyncTimer);
+    return run();
+  }
   clearTimeout(cloudSyncTimer);
-  cloudSyncTimer = setTimeout(run, 1800);
+  cloudSyncTimer = setTimeout(run, 1600);
 }
 
 async function cloudFetchLeaderboard(sortBy = 'total_earned') {
@@ -196,18 +260,19 @@ function loadStateForSession(sess) {
   }
 }
 
-function saveState() {
+function saveState(syncNow = false) {
   if (!session) return;
   try {
     localStorage.setItem(getSaveKey(session), JSON.stringify(state));
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
   } catch {}
-  if (session.mode === 'user') cloudSaveState(false);
+  if (session.mode === 'user') cloudSaveState(syncNow);
 }
 
 /* ======================== AUTH HANDLERS ======================== */
 function setAuthError(msg) {
   const el = document.getElementById('authError');
+  if (!el) return;
   if (!msg) { el.style.display = 'none'; el.textContent = ''; return; }
   el.style.display = 'block';
   el.textContent = msg;
@@ -233,7 +298,7 @@ async function submitAuthForm(e) {
   const pass = document.getElementById('authPass').value;
   const confirmPass = document.getElementById('authConfirm').value;
 
-  // Đăng nhập Tài khoản Admin Offline (Bỏ qua Supabase 100%)
+  // Đăng nhập Tài khoản Admin Offline (Bỏ qua Supabase hoàn toàn)
   if (authTab === 'login' && username === BUILTIN_ADMIN.username) {
     if (pass !== BUILTIN_ADMIN.password) {
       return setAuthError('Sai mật khẩu tài khoản Admin.');
@@ -269,7 +334,7 @@ async function submitAuthForm(e) {
       await cloudCreateAccount(username, displayName, passHash, initialSave);
       session = { mode: 'user', username, displayName };
       state = initialSave;
-      saveState();
+      saveState(true);
       finishAuthEnter(`🎉 Tạo tài khoản ${displayName} thành công!`);
     } else {
       const row = await cloudFetchAccount(username);
@@ -305,6 +370,8 @@ function finishAuthEnter(msg) {
   nextBossCountdown = 40;
   phase = 'IDLE';
   currentBossFight = false;
+  catchStreak = 0;
+  feverTimeLeft = 0;
   clearBiteAlert();
   Scene3D.setMap(getMap());
   updateHud();
@@ -314,8 +381,7 @@ function finishAuthEnter(msg) {
 }
 
 function logoutToAuth(targetTab = 'login') {
-  saveState();
-  if (CLOUD_ENABLED && session && session.mode === 'user') cloudSaveState(true);
+  saveState(true);
   localStorage.removeItem(SESSION_KEY);
   session = null;
   adminGodMode = false;
@@ -323,6 +389,8 @@ function logoutToAuth(targetTab = 'login') {
   currentBossFight = false;
   phase = 'IDLE';
   isHolding = false;
+  catchStreak = 0;
+  feverTimeLeft = 0;
   clearBiteAlert();
   document.getElementById('minigameBox').classList.remove('show', 'boss-mode');
   closeCatchCard();
@@ -347,7 +415,7 @@ async function upgradeGuestToAccount(e) {
     if (exists) return showToast('Tên đăng nhập đã có người dùng!', '#f43f5e');
     await cloudCreateAccount(username, displayName, passHash, state);
     session = { mode: 'user', username, displayName };
-    saveState();
+    saveState(true);
     updateHud();
     renderDrawer();
     sfx.catch();
@@ -362,8 +430,7 @@ async function updateDisplayName() {
   const newName = document.getElementById('editDisplayName').value.trim().slice(0, 20);
   if (!newName) return showToast('Tên hiển thị không được trống!', '#f43f5e');
   session.displayName = newName;
-  saveState();
-  await cloudSaveState(true);
+  saveState(true);
   updateHud();
   renderDrawer();
   showToast('✅ Đã đổi tên hiển thị lên Cloud!', '#10b981');
@@ -388,7 +455,7 @@ async function changePassword() {
   }
 }
 
-/* ======================== AUDIO SYNTH ======================== */
+/* ======================== AUDIO & HAPTICS ======================== */
 let audioCtx = null;
 function ensureAudio() {
   if (!state.sound) return null;
@@ -416,17 +483,48 @@ function playTone(freq, dur = 0.12, type = 'sine', vol = 0.12, slideTo = null) {
   osc.stop(ctx.currentTime + dur);
 }
 
+function vibrateDevice(pattern) {
+  if (state.vibrate && navigator.vibrate) {
+    try { navigator.vibrate(pattern); } catch {}
+  }
+}
+
 const sfx = {
   cast: () => playTone(520, 0.22, 'triangle', 0.12, 180),
   splash: () => playTone(210, 0.18, 'sawtooth', 0.08, 90),
-  bite: () => { playTone(880, 0.1, 'square', 0.11); setTimeout(() => playTone(1174, 0.16, 'square', 0.11), 90); },
-  catch: () => { [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => playTone(f, 0.16, 'triangle', 0.13), i * 65)); },
+  bite: () => {
+    vibrateDevice([45, 35, 65]);
+    playTone(880, 0.1, 'square', 0.11);
+    setTimeout(() => playTone(1174, 0.16, 'square', 0.11), 90);
+  },
+  catch: () => {
+    vibrateDevice(40);
+    [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => playTone(f, 0.16, 'triangle', 0.13), i * 65));
+  },
+  fever: () => {
+    vibrateDevice([40, 30, 80]);
+    [659, 784, 987, 1318, 1568].forEach((f, i) => setTimeout(() => playTone(f, 0.16, 'sine', 0.14), i * 55));
+  },
   fail: () => playTone(280, 0.22, 'sawtooth', 0.1, 110),
-  coin: () => { playTone(987, 0.08, 'sine', 0.1); setTimeout(() => playTone(1318, 0.14, 'sine', 0.1), 65); },
-  bossAlert: () => { [220, 185, 220, 146].forEach((f, i) => setTimeout(() => playTone(f, 0.2, 'sawtooth', 0.12), i * 140)); },
-  bossWin: () => { [523, 659, 784, 1046, 1318].forEach((f, i) => setTimeout(() => playTone(f, 0.22, 'triangle', 0.15), i * 85)); },
-  gachaSpin: () => { [330, 440, 554, 659, 880].forEach((f, i) => setTimeout(() => playTone(f, 0.09, 'sine', 0.1), i * 75)); },
-  gachaEpic: () => { [587, 880, 1174, 1760].forEach((f, i) => setTimeout(() => playTone(f, 0.22, 'triangle', 0.15), i * 80)); }
+  coin: () => {
+    playTone(987, 0.08, 'sine', 0.1);
+    setTimeout(() => playTone(1318, 0.14, 'sine', 0.1), 65);
+  },
+  bossAlert: () => {
+    vibrateDevice([90, 50, 90, 50, 120]);
+    [220, 185, 220, 146].forEach((f, i) => setTimeout(() => playTone(f, 0.2, 'sawtooth', 0.12), i * 140));
+  },
+  bossWin: () => {
+    vibrateDevice([60, 40, 120]);
+    [523, 659, 784, 1046, 1318].forEach((f, i) => setTimeout(() => playTone(f, 0.22, 'triangle', 0.15), i * 85));
+  },
+  gachaSpin: () => {
+    [330, 440, 554, 659, 880].forEach((f, i) => setTimeout(() => playTone(f, 0.09, 'sine', 0.1), i * 75));
+  },
+  gachaEpic: () => {
+    vibrateDevice([50, 30, 100]);
+    [587, 880, 1174, 1760].forEach((f, i) => setTimeout(() => playTone(f, 0.22, 'triangle', 0.15), i * 80));
+  }
 };
 
 /* ======================== HELPERS & 2D FX OVERLAY ======================== */
@@ -441,7 +539,8 @@ function getRodStats(rodId = state.rodId) {
   const base = RODS.find(r => r.id === rodId) || RODS[0];
   const stars = state.rodStars[base.id] || 0;
   return {
-    ...base, stars,
+    ...base,
+    stars,
     luck: Math.round(base.luck * (1 + stars * 0.15) + stars * 6),
     power: +(base.power * (1 + stars * 0.18)).toFixed(2),
     bossDmg: +(base.bossDmg * (1 + stars * 0.20)).toFixed(2),
@@ -451,6 +550,8 @@ function getRodStats(rodId = state.rodId) {
 
 function showToast(msg, borderColor = '#00f3ff') {
   const box = document.getElementById('toastBox');
+  if (!box) return;
+  while (box.children.length >= 3) box.firstChild.remove();
   const el = document.createElement('div');
   el.className = 'toast';
   el.style.borderColor = borderColor;
@@ -475,7 +576,7 @@ function spawnFloatText(wx, wy, wz, text, color = '#fbbf24', size = '18px') {
 let biteAlertEl = null;
 function showBiteAlert(wx, wz) {
   clearBiteAlert();
-  const pt = Scene3D.projectToScreen(wx, 1.1, wz);
+  const pt = Scene3D.projectToScreen(wx, 1.15, wz);
   biteAlertEl = document.createElement('div');
   biteAlertEl.className = 'fx-bite-alert';
   biteAlertEl.style.left = pt.x + 'px';
@@ -483,19 +584,29 @@ function showBiteAlert(wx, wz) {
   biteAlertEl.textContent = '❗';
   document.getElementById('fxLayer').appendChild(biteAlertEl);
 }
+
+function syncBiteAlertPosition() {
+  if (!biteAlertEl || phase !== 'BITING') return;
+  const pt = Scene3D.projectToScreen(bobberX, 1.15, bobberZ);
+  biteAlertEl.style.left = pt.x + 'px';
+  biteAlertEl.style.top = pt.y + 'px';
+}
+
 function clearBiteAlert() {
   if (biteAlertEl) { biteAlertEl.remove(); biteAlertEl = null; }
 }
 
 function addXp(amount) {
   state.xp += amount;
+  let leveledUp = false;
   while (state.xp >= xpNeeded(state.level)) {
     state.xp -= xpNeeded(state.level);
     state.level++;
     state.gems += 5;
+    leveledUp = true;
     showToast(`🎉 Lên cấp ${state.level}! Thưởng +5 💎`, '#fbbf24');
-    sfx.catch();
   }
+  if (leveledUp) sfx.catch();
 }
 
 /* ======================== BOSS EVENT SYSTEM ======================== */
@@ -526,7 +637,7 @@ function summonBossWithGems() {
   if (activeBoss) return showToast('Đang có Boss Thủy Quái xuất hiện rồi!', '#fbbf24');
   if (state.gems < 5) return showToast('Cần 5 💎 để triệu hồi Thủy Quái!', '#f43f5e');
   state.gems -= 5;
-  saveState();
+  saveState(true);
   closeDrawer();
   spawnBoss();
   updateHud();
@@ -539,6 +650,8 @@ function engageBoss() {
   clearBiteAlert();
   currentBossFight = true;
   currentFish = null;
+  dmgPopupAccum = 0;
+
   const rod = getRodStats();
   phase = 'REELING';
   bobberX = activeBoss.wx;
@@ -561,13 +674,18 @@ function engageBoss() {
 }
 
 function defeatBoss() {
+  if (!activeBoss) return;
   const b = activeBoss.data;
+  const bx = activeBoss.wx;
+  const bz = activeBoss.wz;
+
   document.getElementById('minigameBox').classList.remove('show', 'boss-mode');
   isHolding = false;
   currentBossFight = false;
   phase = 'IDLE';
 
-  const earnedGold = Math.round(b.rewardGold * (1 + getRodStats().goldBonus));
+  const feverBoost = feverTimeLeft > 0 ? 1.3 : 1;
+  const earnedGold = Math.round(b.rewardGold * (1 + getRodStats().goldBonus) * feverBoost);
   state.gold += earnedGold;
   state.gems += b.rewardGems;
   state.keys += b.rewardKeys;
@@ -576,11 +694,12 @@ function defeatBoss() {
   state.bossLog[b.id] = (state.bossLog[b.id] || 0) + 1;
   addXp(b.xp);
 
-  Scene3D.spawnSplash(activeBoss.wx, activeBoss.wz, 28);
+  Scene3D.spawnSplash(bx, bz, 28);
+  spawnFloatText(bx, 2.2, bz, `🏆 +${fmt(earnedGold)}🪙 +${b.rewardKeys}🔑`, '#fbbf24', '20px');
   activeBoss = null;
   nextBossCountdown = 65 + Math.floor(Math.random() * 45);
   sfx.bossWin();
-  saveState();
+  saveState(true);
   updateBossUI();
   updateHud();
   updateActionBtn();
@@ -637,7 +756,8 @@ function rollFish() {
     const high = mapFish.filter(f => ['legendary', 'mythical', 'epic'].includes(f.rarity));
     if (high.length) return high[Math.floor(Math.random() * high.length)];
   }
-  const totalLuck = getRodStats().luck + getBait().luck;
+  const feverLuck = feverTimeLeft > 0 ? 25 : 0;
+  const totalLuck = getRodStats().luck + getBait().luck + feverLuck;
   const pool = mapFish.map(f => {
     const r = RARITIES[f.rarity];
     let w = r.weight;
@@ -650,17 +770,32 @@ function rollFish() {
   });
   const sum = pool.reduce((a, b) => a + b.w, 0);
   let roll = Math.random() * sum;
-  for (const item of pool) { roll -= item.w; if (roll <= 0) return item.fish; }
+  for (const item of pool) {
+    roll -= item.w;
+    if (roll <= 0) return item.fish;
+  }
   return pool[0].fish;
 }
 
 function startCast() {
   if (phase !== 'IDLE' || !session) return;
+
+  // Nếu túi đầy và đang bật Tự bán cá thường/hiếm khi Auto-Fish -> tự dọn túi
   if (state.bag.length >= getBagCap()) {
-    showToast('🎒 Túi cá đã đầy! Hãy bán bớt cá hoặc nâng cấp túi.', '#f43f5e');
-    if (state.autoFish) toggleAutoFish(false);
-    return;
+    if (state.autoFish && state.autoSellLow) {
+      const soldCount = sellLowTierFish(true);
+      if (soldCount === 0 || state.bag.length >= getBagCap()) {
+        showToast('🎒 Túi đầy cá quý! Hãy vào Túi để bán hoặc mở rộng túi.', '#f43f5e');
+        toggleAutoFish(false);
+        return;
+      }
+    } else {
+      showToast('🎒 Túi cá đã đầy! Hãy bán bớt cá hoặc nâng cấp túi.', '#f43f5e');
+      if (state.autoFish) toggleAutoFish(false);
+      return;
+    }
   }
+
   const bait = getBait();
   if (!bait.infinite) {
     if ((state.baitCounts[bait.id] || 0) <= 0) {
@@ -672,6 +807,7 @@ function startCast() {
       updateHud();
     }
   }
+
   closeCatchCard();
   clearBiteAlert();
   currentBossFight = false;
@@ -724,8 +860,10 @@ function finishCatch(success) {
   }
 
   if (!success) {
+    catchStreak = 0;
     sfx.fail();
-    showToast('💨 Cá đã tuột mất! Hãy giữ cá trong vùng xanh.', '#f43f5e');
+    showToast('💨 Cá đã tuột mất! Chuỗi Combo bị ngắt.', '#f43f5e');
+    updateHud();
     updateActionBtn();
     if (state.autoFish) setTimeout(startCast, 1000);
     return;
@@ -734,20 +872,33 @@ function finishCatch(success) {
   const f = currentFish;
   const rInfo = RARITIES[f.rarity];
   const rod = getRodStats();
+
+  // Combo & Fever trigger
+  catchStreak++;
+  if (catchStreak > (state.stats.bestStreak || 0)) state.stats.bestStreak = catchStreak;
+  if (catchStreak > 0 && catchStreak % 5 === 0) {
+    feverTimeLeft = 30;
+    sfx.fever();
+    showToast(`🔥 HƯNG PHẤN (Combo x${catchStreak})! +30% Vàng & +25% May Mắn trong 30s!`, '#ff00ea');
+  }
+
   const weight = +(f.minW + Math.random() * (f.maxW - f.minW)).toFixed(2);
   const weightBonus = 0.8 + (weight / f.maxW) * 0.6;
-  const priceBoost = 1 + state.upgrades.price * 0.12 + rod.goldBonus;
+  const feverMult = feverTimeLeft > 0 ? 1.3 : 1.0;
+  const priceBoost = (1 + state.upgrades.price * 0.12 + rod.goldBonus) * feverMult;
   const price = Math.max(5, Math.round(f.basePrice * weightBonus * priceBoost));
 
   state.bag.unshift({
     uid: Date.now() + Math.random(),
-    fishId: f.id, weight, price,
+    fishId: f.id,
+    weight,
+    price,
     locked: ['legendary', 'mythical'].includes(f.rarity)
   });
 
   state.stats.totalCaught++;
-  if (['rare','epic','legendary','mythical'].includes(f.rarity)) state.stats.rareCaught++;
-  if (['legendary','mythical'].includes(f.rarity)) state.stats.legendCaught++;
+  if (['rare', 'epic', 'legendary', 'mythical'].includes(f.rarity)) state.stats.rareCaught++;
+  if (['legendary', 'mythical'].includes(f.rarity)) state.stats.legendCaught++;
 
   let isNew = false;
   if (!state.dex[f.id]) {
@@ -759,6 +910,7 @@ function finishCatch(success) {
     if (weight > state.dex[f.id].maxW) state.dex[f.id].maxW = weight;
   }
 
+  // 9% tỉ lệ câu trúng Chìa Khóa Gacha
   if (Math.random() < 0.09) {
     state.keys++;
     showToast('🔑 Câu trúng Chìa Khóa Rương Gacha +1!', '#f472b6');
@@ -768,7 +920,7 @@ function finishCatch(success) {
   spawnFloatText(bobberX, 1.6, bobberZ, `${f.emoji} +${fmt(price)}🪙`, rInfo.color, '16px');
   addXp(rInfo.xp);
   sfx.catch();
-  saveState();
+  saveState(isNew || ['legendary', 'mythical'].includes(f.rarity));
   updateHud();
   updateActionBtn();
 
@@ -777,8 +929,8 @@ function finishCatch(success) {
   }
 
   if (state.autoFish) {
-    showToast(`🎣 Bắt được ${f.emoji} ${f.name} (${weight}kg • ${fmt(price)}🪙)`, rInfo.color);
-    setTimeout(() => { if (state.autoFish && phase === 'IDLE') startCast(); }, 950);
+    showToast(`🎣 ${f.emoji} ${f.name} (${weight}kg • ${fmt(price)}🪙) • Combo x${catchStreak}`, rInfo.color);
+    setTimeout(() => { if (state.autoFish && phase === 'IDLE') startCast(); }, 900);
   } else {
     showCatchCard(f, weight, price, isNew);
   }
@@ -788,7 +940,7 @@ function showCatchCard(f, weight, price, isNew) {
   const rInfo = RARITIES[f.rarity];
   const card = document.getElementById('catchCard');
   const tag = document.getElementById('ccRarity');
-  tag.textContent = rInfo.name;
+  tag.textContent = rInfo.name + (feverTimeLeft > 0 ? ' • 🔥 FEVER' : '');
   tag.className = 'rarity-tag bg-' + f.rarity;
   card.style.borderColor = rInfo.color;
   document.getElementById('ccEmoji').textContent = f.emoji;
@@ -912,9 +1064,9 @@ function openGacha(count, payWith) {
     lastGachaResults = pulls;
     isSpinningGacha = false;
     if (highHit) sfx.gachaEpic(); else sfx.catch();
-    saveState();
+    saveState(true);
     updateHud();
-    renderDrawer();
+    if (currentDrawer === 'gacha') renderDrawer();
   }, 650);
 }
 
@@ -937,13 +1089,21 @@ function loop(now) {
     activeBoss,
     currentBossFight,
     rodColor: rod.color,
-    rodGlow: rod.gachaOnly || rod.rarity === 'mythical'
+    rodGlow: rod.gachaOnly || rod.rarity === 'mythical' || feverTimeLeft > 0
   });
 
+  syncBiteAlertPosition();
   requestAnimationFrame(loop);
 }
 
 function updateGameplay(dt, t) {
+  // Fever countdown
+  if (feverTimeLeft > 0) {
+    feverTimeLeft = Math.max(0, feverTimeLeft - dt);
+    if (feverTimeLeft === 0) updateHud();
+  }
+
+  // Boss timer & motion
   if (activeBoss) {
     activeBoss.timeLeft -= dt;
     activeBoss.wx = 7.0 + Math.sin(t * 0.9) * 1.4;
@@ -975,6 +1135,7 @@ function updateGameplay(dt, t) {
     }
   }
 
+  // Fishing phases
   if (phase === 'CASTING') {
     castProgress += dt * 2.5;
     if (castProgress >= 1) {
@@ -982,7 +1143,8 @@ function updateGameplay(dt, t) {
       Scene3D.spawnSplash(bobberX, bobberZ, 12);
       sfx.splash();
       phase = 'WAITING';
-      const speedCut = 1 - Math.min(0.68, state.upgrades.speed * 0.1 + getBait().speed);
+      const feverCut = feverTimeLeft > 0 ? 0.2 : 0;
+      const speedCut = 1 - Math.min(0.75, state.upgrades.speed * 0.1 + getBait().speed + feverCut);
       phaseTimer = (1.4 + Math.random() * 2.4) * speedCut;
       updateActionBtn();
     }
@@ -1002,9 +1164,11 @@ function updateGameplay(dt, t) {
     if (Math.random() < dt * 6) Scene3D.spawnSplash(bobberX, bobberZ, 2);
     if (phaseTimer <= 0) {
       phase = 'IDLE';
+      catchStreak = 0;
       clearBiteAlert();
       sfx.fail();
       showToast('⏳ Chậm tay quá! Cá ăn mồi rồi chạy mất.', '#fbbf24');
+      updateHud();
       updateActionBtn();
     }
   } else if (phase === 'REELING') {
@@ -1038,7 +1202,7 @@ function updateGameplay(dt, t) {
       bobberX = activeBoss.wx;
       bobberZ = activeBoss.wz;
       if (inside) {
-        const mult = adminGodMode ? 10 : 1;
+        const mult = (adminGodMode ? 10 : 1) * (feverTimeLeft > 0 ? 1.35 : 1);
         const dmg = (44 * rod.power * rod.bossDmg * mult) * dt;
         activeBoss.hp -= dmg;
         mg.progress = Math.min(100, mg.progress + 18 * dt);
@@ -1080,7 +1244,7 @@ const mainBtn = document.getElementById('mainActionBtn');
 
 function updateActionBtn() {
   mainBtn.className = 'main-btn';
-  if (phase === 'IDLE') mainBtn.textContent = '🎣 THẢ CẦN CÂU';
+  if (phase === 'IDLE') mainBtn.textContent = feverTimeLeft > 0 ? '🔥 THẢ CẦN (FEVER x1.3)' : '🎣 THẢ CẦN CÂU';
   else if (phase === 'CASTING' || phase === 'WAITING') { mainBtn.textContent = '⏳ Đang chờ cá cắn...'; mainBtn.classList.add('waiting'); }
   else if (phase === 'BITING') { mainBtn.textContent = '⚡ CÁ CẮN! GIẬT NGAY!'; mainBtn.classList.add('bite'); }
   else if (phase === 'REELING') {
@@ -1102,6 +1266,7 @@ function handlePrimaryUp() { isHolding = false; }
 mainBtn.addEventListener('pointerdown', handlePrimaryDown);
 window.addEventListener('pointerup', handlePrimaryUp);
 window.addEventListener('pointercancel', handlePrimaryUp);
+window.addEventListener('blur', handlePrimaryUp);
 document.getElementById('scene3dContainer').addEventListener('pointerdown', handlePrimaryDown);
 
 document.getElementById('bossEngageBtn').addEventListener('pointerdown', e => {
@@ -1151,7 +1316,10 @@ function updateHud() {
 
   const starTxt = rod.stars > 0 ? ` ${rod.stars}★` : '';
   const baitQty = bait.infinite ? '∞' : fmt(state.baitCounts[bait.id] || 0);
-  document.getElementById('uiGearInfo').textContent = `${rod.icon} ${rod.name}${starTxt} • ${bait.icon}(${baitQty})`;
+  const comboTxt = feverTimeLeft > 0
+    ? ` • 🔥FEVER ${Math.ceil(feverTimeLeft)}s`
+    : (catchStreak >= 2 ? ` • ⚡x${catchStreak}` : '');
+  document.getElementById('uiGearInfo').textContent = `${rod.icon} ${rod.name}${starTxt} • ${bait.icon}(${baitQty})${comboTxt}`;
 
   const autoEl = document.getElementById('btnAutoFish');
   autoEl.textContent = state.upgrades.auto ? `🤖 Auto: ${state.autoFish ? 'BẬT' : 'TẮT'}` : '🤖 Auto: KHÓA';
@@ -1177,8 +1345,8 @@ function openDrawer(type, subTab = null) {
   if (!session) return;
   currentDrawer = type;
   if (subTab) currentSubTab = subTab;
-  else if (type === 'events' && !['quests','daily','giftcode'].includes(currentSubTab)) currentSubTab = 'quests';
-  else if (type === 'shop' && !['rods','baits','upgrades'].includes(currentSubTab)) currentSubTab = 'rods';
+  else if (type === 'events' && !['quests', 'daily', 'giftcode'].includes(currentSubTab)) currentSubTab = 'quests';
+  else if (type === 'shop' && !['rods', 'baits', 'upgrades'].includes(currentSubTab)) currentSubTab = 'rods';
   document.getElementById('drawer').classList.add('open');
   renderDrawer();
 }
@@ -1189,7 +1357,7 @@ function closeDrawer() {
 }
 
 function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 async function loadLeaderboardUI(sortBy) {
@@ -1260,11 +1428,13 @@ function renderDrawer() {
       </div>
 
       <div class="card-col">
-        <div style="font-size:13px;font-weight:700;color:#fbbf24;">💎 Bơm tài nguyên nhanh:</div>
+        <div style="font-size:13px;font-weight:700;color:#fbbf24;">💎 Bơm tài nguyên & hiệu ứng nhanh:</div>
         <div class="admin-grid">
           <button class="btn-sm btn-buy" onclick="adminAdd('gold',10000000)">+10 Triệu 🪙</button>
           <button class="btn-sm btn-gem" onclick="adminAdd('gems',50000)">+50.000 💎</button>
           <button class="btn-sm btn-pink" onclick="adminAdd('keys',500)">+500 🔑</button>
+          <button class="btn-sm btn-purple" onclick="feverTimeLeft=60;updateHud();updateActionBtn();showToast('🔥 Bật Fever 60 giây!','#ff00ea')">🔥 Bật Fever 60s</button>
+          <button class="btn-sm btn-equip" onclick="adminAddLevel(10)">⭐ +10 Cấp Độ</button>
           <button class="btn-sm btn-equip" onclick="adminRestoreMax()">♻️ Full Max Đồ</button>
         </div>
       </div>
@@ -1272,7 +1442,7 @@ function renderDrawer() {
       <div class="card-col">
         <div style="font-size:13px;font-weight:700;color:#fda4af;">⚔️ Triệu hồi nhanh Boss Thủy Quái 3D:</div>
         <div class="admin-grid">
-          ${BOSS_DB.map(b => `<button class="btn-sm btn-danger" onclick="activeBoss=null;closeDrawer();spawnBoss('${b.id}')">${b.emoji} ${b.name.split(' ').slice(0,3).join(' ')}</button>`).join('')}
+          ${BOSS_DB.map(b => `<button class="btn-sm btn-danger" onclick="activeBoss=null;closeDrawer();spawnBoss('${b.id}')">${b.emoji} ${b.name.split(' ').slice(0, 3).join(' ')}</button>`).join('')}
         </div>
       </div>
     `;
@@ -1282,9 +1452,9 @@ function renderDrawer() {
     title.textContent = '👑 Bảng Xếp Hạng Online (Top 30)';
     tabs.style.display = 'flex';
     tabs.innerHTML = `
-      <button class="sub-tab ${lbSort==='total_earned'?'active':''}" onclick="lbSort='total_earned';renderDrawer()">🪙 Phú Hộ</button>
-      <button class="sub-tab ${lbSort==='level'?'active':''}" onclick="lbSort='level';renderDrawer()">⭐ Cấp Độ</button>
-      <button class="sub-tab ${lbSort==='bosses_killed'?'active':''}" onclick="lbSort='bosses_killed';renderDrawer()">⚔️ Săn Boss</button>
+      <button class="sub-tab ${lbSort === 'total_earned' ? 'active' : ''}" onclick="lbSort='total_earned';renderDrawer()">🪙 Phú Hộ</button>
+      <button class="sub-tab ${lbSort === 'level' ? 'active' : ''}" onclick="lbSort='level';renderDrawer()">⭐ Cấp Độ</button>
+      <button class="sub-tab ${lbSort === 'bosses_killed' ? 'active' : ''}" onclick="lbSort='bosses_killed';renderDrawer()">⚔️ Săn Boss</button>
     `;
     loadLeaderboardUI(lbSort);
   }
@@ -1362,12 +1532,16 @@ function renderDrawer() {
     title.textContent = `🎒 Túi Cá (${state.bag.length}/${getBagCap()})`;
     const unlockedTotal = state.bag.filter(x => !x.locked).reduce((a, b) => a + b.price, 0);
     body.innerHTML = `
-      <div class="bag-actions">
+      <div class="bag-actions" style="flex-wrap:wrap;">
         <div>
           <div style="font-size:12px;color:#94a3b8;">Giá trị cá chưa khóa</div>
           <div style="font-size:16px;font-weight:800;color:#fbbf24;">🪙 ${fmt(unlockedTotal)} Vàng</div>
         </div>
-        <button class="btn-sm btn-buy" onclick="sellAllFish()">Bán tất cả</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn-sm btn-muted" onclick="sortBagByPrice()">${bagSortDesc ? '⬇️ Giá cao' : '⬆️ Mới nhất'}</button>
+          <button class="btn-sm btn-gem" onclick="sellLowTierFish(false)">Bán Thường/Hiếm</button>
+          <button class="btn-sm btn-buy" onclick="sellAllFish()">Bán tất cả</button>
+        </div>
       </div>
     `;
     if (!state.bag.length) {
@@ -1388,7 +1562,7 @@ function renderDrawer() {
             </div>
           </div>
           <div style="display:flex;gap:6px;">
-            <button class="btn-sm btn-muted" onclick="toggleLockFish(${idx})">${item.locked ? '🔒' : '🔓'}</button>
+            <button class="btn-sm btn-muted" title="Khóa/Mở khóa" onclick="toggleLockFish(${idx})">${item.locked ? '🔒' : '🔓'}</button>
             <button class="btn-sm btn-buy" ${item.locked ? 'disabled style="opacity:0.4"' : ''} onclick="sellSingleFish(${idx})">Bán</button>
           </div>
         </div>
@@ -1400,9 +1574,9 @@ function renderDrawer() {
     title.textContent = '🛒 Kho Cần & Cửa Hàng';
     tabs.style.display = 'flex';
     tabs.innerHTML = `
-      <button class="sub-tab ${currentSubTab==='rods'?'active':''}" onclick="openDrawer('shop','rods')">🎣 Cần Câu (${RODS.length})</button>
-      <button class="sub-tab ${currentSubTab==='baits'?'active':''}" onclick="openDrawer('shop','baits')">🪱 Mồi Câu</button>
-      <button class="sub-tab ${currentSubTab==='upgrades'?'active':''}" onclick="openDrawer('shop','upgrades')">⚡ Nâng Cấp</button>
+      <button class="sub-tab ${currentSubTab === 'rods' ? 'active' : ''}" onclick="openDrawer('shop','rods')">🎣 Cần Câu (${RODS.length})</button>
+      <button class="sub-tab ${currentSubTab === 'baits' ? 'active' : ''}" onclick="openDrawer('shop','baits')">🪱 Mồi Câu</button>
+      <button class="sub-tab ${currentSubTab === 'upgrades' ? 'active' : ''}" onclick="openDrawer('shop','upgrades')">⚡ Nâng Cấp</button>
     `;
 
     if (currentSubTab === 'rods') {
@@ -1475,8 +1649,8 @@ function renderDrawer() {
     title.textContent = '🎁 Gacha Rương Cần Câu';
     tabs.style.display = 'flex';
     tabs.innerHTML = `
-      <button class="sub-tab ${activeChestId==='pirate'?'active':''}" onclick="activeChestId='pirate';lastGachaResults=[];renderDrawer()">🧰 Rương Hải Tặc</button>
-      <button class="sub-tab ${activeChestId==='divine'?'active':''}" onclick="activeChestId='divine';lastGachaResults=[];renderDrawer()">👑 Rương Thần Biển VIP</button>
+      <button class="sub-tab ${activeChestId === 'pirate' ? 'active' : ''}" onclick="activeChestId='pirate';lastGachaResults=[];renderDrawer()">🧰 Rương Hải Tặc</button>
+      <button class="sub-tab ${activeChestId === 'divine' ? 'active' : ''}" onclick="activeChestId='divine';lastGachaResults=[];renderDrawer()">👑 Rương Thần Biển VIP</button>
     `;
     const c = CHESTS[activeChestId];
     const pityPct = Math.min(100, (state.gachaPity / 15) * 100);
@@ -1510,10 +1684,10 @@ function renderDrawer() {
         html += `
           <div class="gacha-pull-card r-${res.rarity}" style="animation-delay:${idx * 0.04}s">
             <div style="font-size:30px;">${res.icon}</div>
-            <div style="font-weight:700;font-size:12px;margin:4px 0;">${res.name}</div>
+            <div style="font-weight:700;font-size:12px;margin:4px 0;">${escapeHtml(res.name)}</div>
             <span class="rarity-tag bg-${res.rarity}">${RARITIES[res.rarity].name}</span>
             <div style="font-size:11px;color:#fbbf24;margin-top:5px;font-weight:700;">${res.note}</div>
-            ${res.type === 'rod' ? `<button class="btn-sm btn-equip" style="margin-top:6px;padding:4px 8px;font-size:11px;" onclick="equipRod('${res.rodId}');showToast('Đã trang bị ${res.name}!','#10b981')">Trang bị</button>` : ''}
+            ${res.type === 'rod' ? `<button class="btn-sm btn-equip" style="margin-top:6px;padding:4px 8px;font-size:11px;" onclick="equipRod('${res.rodId}', true)">Trang bị</button>` : ''}
           </div>
         `;
       });
@@ -1602,8 +1776,17 @@ function renderDrawer() {
   else if (currentDrawer === 'dex') {
     const discovered = Object.keys(state.dex).length;
     title.textContent = `📖 Bộ Sưu Tập Cá (${discovered}/${FISH_DB.length})`;
-    let html = '<div class="grid-dex">';
-    FISH_DB.forEach(f => {
+    const list = dexMapFilter === 'all'
+      ? FISH_DB
+      : FISH_DB.filter(f => f.maps.includes(dexMapFilter));
+
+    let filterHtml = `<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;">
+      <button class="btn-sm ${dexMapFilter === 'all' ? 'btn-gem' : 'btn-muted'}" onclick="dexMapFilter='all';renderDrawer()">Tất cả</button>
+      ${MAPS.map(m => `<button class="btn-sm ${dexMapFilter === m.id ? 'btn-gem' : 'btn-muted'}" onclick="dexMapFilter='${m.id}';renderDrawer()">${m.icon} ${m.name.split(' ')[0]}</button>`).join('')}
+    </div>`;
+
+    let html = filterHtml + '<div class="grid-dex">';
+    list.forEach(f => {
       const rec = state.dex[f.id];
       const r = RARITIES[f.rarity];
       html += `
@@ -1625,9 +1808,9 @@ function renderDrawer() {
     title.textContent = '🏆 Sự Kiện, Điểm Danh & Giftcode';
     tabs.style.display = 'flex';
     tabs.innerHTML = `
-      <button class="sub-tab ${currentSubTab==='quests'?'active':''}" onclick="openDrawer('events','quests')">🏆 Nhiệm Vụ</button>
-      <button class="sub-tab ${currentSubTab==='daily'?'active':''}" onclick="openDrawer('events','daily')">📅 Điểm Danh</button>
-      <button class="sub-tab ${currentSubTab==='giftcode'?'active':''}" onclick="openDrawer('events','giftcode')">🎟️ Giftcode</button>
+      <button class="sub-tab ${currentSubTab === 'quests' ? 'active' : ''}" onclick="openDrawer('events','quests')">🏆 Nhiệm Vụ</button>
+      <button class="sub-tab ${currentSubTab === 'daily' ? 'active' : ''}" onclick="openDrawer('events','daily')">📅 Điểm Danh</button>
+      <button class="sub-tab ${currentSubTab === 'giftcode' ? 'active' : ''}" onclick="openDrawer('events','giftcode')">🎟️ Giftcode</button>
     `;
 
     if (currentSubTab === 'quests') {
@@ -1705,18 +1888,40 @@ function renderDrawer() {
 
   else if (currentDrawer === 'settings') {
     title.textContent = '⚙️ Cài Đặt & Sao Lưu';
-    const code = btoa(unescape(encodeURIComponent(JSON.stringify(state))));
+    const code = encodeSaveB64(state);
     body.innerHTML = `
       <div class="card-item">
         <div class="item-meta">
           <div class="item-name">📊 Thống kê cần thủ (${escapeHtml(session.displayName)})</div>
           <div class="item-desc">
             Tổng cá đã câu: ${fmt(state.stats.totalCaught)} • Boss đã hạ: ${fmt(state.stats.bossesKilled)}<br>
-            Lượt quay Gacha: ${fmt(state.stats.gachaPulls)} • Tổng vàng: ${fmt(state.stats.totalEarned)}
+            Lượt quay Gacha: ${fmt(state.stats.gachaPulls)} • Combo kỷ lục: x${fmt(state.stats.bestStreak || 0)}<br>
+            Tổng vàng kiếm được: ${fmt(state.stats.totalEarned)}
           </div>
         </div>
         <button class="btn-sm btn-gem" onclick="openDrawer('account')">👤 Tài khoản</button>
       </div>
+
+      <div class="card-item">
+        <div class="item-meta">
+          <div class="item-name">🤖 Tự bán cá Thường/Hiếm khi đầy túi (Auto-Fish)</div>
+          <div class="item-desc">Giúp treo Auto-Fish liên tục không bị dừng giữa chừng.</div>
+        </div>
+        <button class="btn-sm ${state.autoSellLow ? 'btn-equip' : 'btn-muted'}" onclick="state.autoSellLow=!state.autoSellLow;saveState();renderDrawer()">
+          ${state.autoSellLow ? 'ĐANG BẬT' : 'ĐANG TẮT'}
+        </button>
+      </div>
+
+      <div class="card-item">
+        <div class="item-meta">
+          <div class="item-name">📳 Rung phản hồi trên điện thoại</div>
+          <div class="item-desc">Rung nhẹ khi cá cắn mồi hoặc Boss xuất hiện.</div>
+        </div>
+        <button class="btn-sm ${state.vibrate ? 'btn-equip' : 'btn-muted'}" onclick="state.vibrate=!state.vibrate;saveState();renderDrawer()">
+          ${state.vibrate ? 'BẬT' : 'TẮT'}
+        </button>
+      </div>
+
       <div style="font-size:12.5px;font-weight:700;color:#38bdf8;">Sao lưu / Chuyển dữ liệu thủ công (Mã lưu):</div>
       <textarea class="save-box" id="saveCodeBox">${code}</textarea>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -1734,6 +1939,13 @@ function adminAdd(field, amount) {
   state[field] = (state[field] || 0) + amount;
   saveState(); updateHud(); sfx.coin();
   showToast(`👑 Admin đã bơm +${fmt(amount)} ${field}!`, '#ff00ea');
+}
+
+function adminAddLevel(delta) {
+  if (!session || session.mode !== 'admin') return;
+  state.level += delta;
+  saveState(); updateHud(); sfx.catch();
+  showToast(`👑 Admin đã tăng lên Lv.${state.level}!`, '#ff00ea');
 }
 
 function adminRestoreMax() {
@@ -1754,7 +1966,7 @@ function claimDailyReward() {
   if (r.bait) state.baitCounts[r.bait.id] = (state.baitCounts[r.bait.id] || 0) + r.bait.qty;
   state.dailyStreak++;
   state.lastDailyDate = todayKey();
-  sfx.catch(); saveState(); updateHud(); renderDrawer();
+  sfx.catch(); saveState(true); updateHud(); renderDrawer();
   showToast(`🎁 Điểm danh Ngày ${r.day}: Nhận ${r.label}!`, '#fbbf24');
 }
 
@@ -1772,11 +1984,26 @@ function redeemGiftcode() {
   state.keys += reward.keys || 0;
   state.stats.totalEarned += reward.gold || 0;
   if (reward.bait) state.baitCounts[reward.bait.id] = (state.baitCounts[reward.bait.id] || 0) + reward.bait.qty;
-  sfx.gachaEpic(); saveState(); updateHud(); renderDrawer();
+  sfx.gachaEpic(); saveState(true); updateHud(); renderDrawer();
   showToast(`🎉 Nhập mã ${code} thành công! +${fmt(reward.gold)}🪙 +${reward.gems}💎 +${reward.keys}🔑`, '#10b981');
 }
 
-function toggleLockFish(idx) { state.bag[idx].locked = !state.bag[idx].locked; saveState(); renderDrawer(); }
+function sortBagByPrice() {
+  if (bagSortDesc) {
+    state.bag.sort((a, b) => b.price - a.price);
+  } else {
+    state.bag.sort((a, b) => b.uid - a.uid);
+  }
+  bagSortDesc = !bagSortDesc;
+  saveState();
+  renderDrawer();
+}
+
+function toggleLockFish(idx) {
+  state.bag[idx].locked = !state.bag[idx].locked;
+  saveState();
+  renderDrawer();
+}
 
 function sellSingleFish(idx) {
   if (state.bag[idx].locked) return;
@@ -1785,6 +2012,32 @@ function sellSingleFish(idx) {
   state.gold += p;
   state.stats.totalEarned += p;
   sfx.coin(); saveState(); updateHud(); renderDrawer();
+}
+
+function sellLowTierFish(silent = false) {
+  const keep = [];
+  let earned = 0, sold = 0;
+  for (const item of state.bag) {
+    const f = FISH_DB.find(x => x.id === item.fishId);
+    const isLow = f && (f.rarity === 'common' || f.rarity === 'uncommon');
+    if (!item.locked && isLow) {
+      earned += item.price;
+      sold++;
+    } else {
+      keep.push(item);
+    }
+  }
+  if (sold === 0) {
+    if (!silent) showToast('Không có cá Thường/Hiếm chưa khóa để bán!', '#fbbf24');
+    return 0;
+  }
+  state.bag = keep;
+  state.gold += earned;
+  state.stats.totalEarned += earned;
+  sfx.coin(); saveState(); updateHud();
+  if (currentDrawer === 'bag') renderDrawer();
+  showToast(`💰 Đã bán nhanh ${sold} cá Thường/Hiếm (+${fmt(earned)} 🪙)!`, '#10b981');
+  return sold;
 }
 
 function sellAllFish() {
@@ -1798,7 +2051,7 @@ function sellAllFish() {
   state.bag = keep;
   state.gold += earned;
   state.stats.totalEarned += earned;
-  sfx.coin(); saveState(); updateHud(); renderDrawer();
+  sfx.coin(); saveState(true); updateHud(); renderDrawer();
   showToast(`💰 Đã bán ${sold} con cá, thu về +${fmt(earned)} Vàng!`, '#10b981');
 }
 
@@ -1808,14 +2061,16 @@ function buyRod(id) {
   state.gold -= r.cost;
   state.rodsOwned.push(id);
   state.rodId = id;
-  sfx.coin(); saveState(); updateHud(); renderDrawer();
+  sfx.coin(); saveState(true); updateHud(); renderDrawer();
   showToast(`🎣 Đã mua & trang bị ${r.name}!`, '#10b981');
 }
 
-function equipRod(id) {
+function equipRod(id, notify = false) {
   if (!state.rodsOwned.includes(id)) return;
   state.rodId = id;
-  saveState(); updateHud(); renderDrawer();
+  const r = RODS.find(x => x.id === id);
+  saveState(true); updateHud(); renderDrawer();
+  if (notify && r) showToast(`🎣 Đã trang bị ${r.name}!`, '#10b981');
 }
 
 function buyBait(id) {
@@ -1843,7 +2098,7 @@ function buyUpgrade(id) {
   if (state.gold < cost) return showToast('Không đủ Vàng!', '#f43f5e');
   state.gold -= cost;
   state.upgrades[id] = lv + 1;
-  sfx.coin(); saveState(); updateHud(); renderDrawer();
+  sfx.coin(); saveState(true); updateHud(); renderDrawer();
   showToast(`⚡ Nâng cấp ${u.name} thành công!`, '#10b981');
 }
 
@@ -1855,7 +2110,7 @@ function unlockMap(id) {
   state.mapsUnlocked.push(id);
   state.mapId = id;
   Scene3D.setMap(m);
-  sfx.catch(); saveState(); updateHud(); renderDrawer();
+  sfx.catch(); saveState(true); updateHud(); renderDrawer();
   showToast(`🗺️ Đã mở khóa & tới bản đồ 3D ${m.name}!`, '#38bdf8');
 }
 
@@ -1875,24 +2130,30 @@ function claimQuest(id) {
   state.gems += q.rewardGems;
   state.keys += q.rewardKeys;
   state.stats.totalEarned += q.rewardGold;
-  sfx.catch(); saveState(); updateHud(); renderDrawer();
+  sfx.catch(); saveState(true); updateHud(); renderDrawer();
   showToast(`🎁 Nhận +${fmt(q.rewardGold)}🪙, +${q.rewardGems}💎, +${q.rewardKeys}🔑!`, '#fbbf24');
 }
 
 function copySaveCode() {
   const box = document.getElementById('saveCodeBox');
-  navigator.clipboard?.writeText(box.value);
-  showToast('📋 Đã sao chép mã lưu!', '#10b981');
+  if (!box) return;
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(box.value).then(() => showToast('📋 Đã sao chép mã lưu!', '#10b981'));
+  } else {
+    box.select();
+    document.execCommand('copy');
+    showToast('📋 Đã sao chép mã lưu!', '#10b981');
+  }
 }
 
 function importSaveCode() {
   try {
     const txt = document.getElementById('saveCodeBox').value.trim();
-    const decoded = JSON.parse(decodeURIComponent(escape(atob(txt))));
+    const decoded = decodeSaveB64(txt);
     if (typeof decoded.gold !== 'number') throw new Error();
     state = normalizeState(decoded);
     Scene3D.setMap(getMap());
-    saveState(); updateHud(); closeDrawer();
+    saveState(true); updateHud(); closeDrawer();
     showToast('✅ Đã khôi phục dữ liệu thành công!', '#10b981');
   } catch {
     showToast('❌ Mã lưu không hợp lệ!', '#f43f5e');
@@ -1904,8 +2165,10 @@ function resetGame() {
   state = session.mode === 'admin' ? createAdminState() : defaultState();
   activeBoss = null;
   nextBossCountdown = 40;
+  catchStreak = 0;
+  feverTimeLeft = 0;
   Scene3D.setMap(getMap());
-  saveState(); updateHud(); updateBossUI(); closeDrawer();
+  saveState(true); updateHud(); updateBossUI(); closeDrawer();
   showToast('🔄 Đã đặt lại tiến trình!', '#fbbf24');
 }
 
